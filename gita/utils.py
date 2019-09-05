@@ -4,8 +4,9 @@ import asyncio
 import platform
 from functools import lru_cache
 from typing import List, Dict, Coroutine, Union
+from itertools import zip_longest
 
-from . import info
+from . import info, constants
 
 
 def get_path_fname() -> str:
@@ -18,7 +19,7 @@ def get_path_fname() -> str:
 
 
 @lru_cache()
-def get_repos() -> Dict[str, str]:
+def get_repos() -> Dict[str, Dict[str, str]]:
     """
     Return a `dict` of repo name to repo absolute path
     """
@@ -31,14 +32,20 @@ def get_repos() -> Dict[str, str]:
                 line = line.rstrip()
                 if not line:  # blank line
                     continue
-                path, name = line.split(',')
+                values = line.split(',')
+                repo = {}
+                for key, value in zip_longest(constants.REPO_FIELDS, values, ''):
+                    repo[key] = value
                 if not is_git(path):
                     continue
                 if name not in repos:
-                    repos[name] = path
+                    repos[name] = repo
                 else:  # repo name collision for different paths: include parent path name
+                    # FIXME: Since we have the `gita rename` command, this logic
+                    #        isn't of much value. Maybe delete.
                     par_name = os.path.basename(os.path.dirname(path))
-                    repos[os.path.join(par_name, name)] = path
+                    repos[os.path.join(par_name, name)] = repo
+    print(repos)
     return repos
 
 
@@ -95,13 +102,13 @@ def add_repos(repos: Dict[str, str], new_paths: List[str]):
     """
     Write new repo paths to file
     """
-    existing_paths = set(repos.values())
+    existing_paths = {r['path'] for r in repos.values()}
     new_paths = set(os.path.abspath(p) for p in new_paths if is_git(p))
     new_paths = new_paths - existing_paths
     if new_paths:
         print(f"Found {len(new_paths)} new repo(s).")
         new_repos = {
-                os.path.basename(os.path.normpath(path)): path
+                os.path.basename(os.path.normpath(path)): {'path': path}
                 for path in new_paths}
         write_to_repo_file(new_repos, 'a+')
     else:
